@@ -171,6 +171,8 @@ static bool get_test_output_path(std::string& test_output_directory) {
     test_output_directory.pop_back();
   }
   test_output_directory += "\\nxdk_pgraph_tests";
+
+  TestHost::EnsureFolderExists(test_output_directory);
   return true;
 }
 
