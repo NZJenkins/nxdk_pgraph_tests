@@ -48,6 +48,7 @@
 #include "tests/volume_texture_tests.h"
 #include "tests/w_param_tests.h"
 #include "tests/zero_stride_tests.h"
+#include "tests/lighting_spot_tests.h"
 
 #ifndef FALLBACK_OUTPUT_ROOT_PATH
 #define FALLBACK_OUTPUT_ROOT_PATH "e:\\";
@@ -295,6 +296,10 @@ static void register_suites(TestHost& host, std::vector<std::shared_ptr<TestSuit
   }
   {
     auto suite = std::make_shared<ImageBlitTests>(host, output_directory);
+    test_suites.push_back(std::dynamic_pointer_cast<TestSuite>(suite));
+  }
+  {
+    auto suite = std::make_shared<LightingSpotTests>(host, output_directory);
     test_suites.push_back(std::dynamic_pointer_cast<TestSuite>(suite));
   }
   {

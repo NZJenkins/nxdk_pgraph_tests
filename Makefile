@@ -32,6 +32,7 @@ SRCS = \
 	$(SRCDIR)/tests/front_face_tests.cpp \
 	$(SRCDIR)/tests/image_blit_tests.cpp \
 	$(SRCDIR)/tests/lighting_normal_tests.cpp \
+	$(SRCDIR)/tests/lighting_spot_tests.cpp \
 	$(SRCDIR)/tests/material_alpha_tests.cpp \
 	$(SRCDIR)/tests/material_color_tests.cpp \
 	$(SRCDIR)/tests/material_color_source_tests.cpp \
