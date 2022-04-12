@@ -17,11 +17,7 @@ class TextureShadowComparatorTests : public TestSuite {
   void Initialize() override;
 
  private:
-  void CreateGeometry();
-  void TestD16();
-
- private:
-  struct s_CtxDma texture_target_ctx_ {};
+  void Test(uint32_t depth_format, uint32_t texture_format, uint32_t shadow_comp_function, const std::string &name);
 };
 
 #endif  // NXDK_PGRAPH_TESTS_TEXTURE_SHADOW_COMPARATOR_TESTS_H
