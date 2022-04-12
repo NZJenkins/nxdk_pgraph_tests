@@ -375,25 +375,89 @@ void TextureShadowComparatorTests::TestPerspective(uint32_t depth_format, uint32
   p = pb_push1(p, NV097_SET_SURFACE_ZETA_OFFSET, reinterpret_cast<uint32_t>(host_.GetTextureMemory()) & 0x03FFFFFF);
   pb_end(p);
 
-  constexpr float kLeft = -2.75f;
-  constexpr float kRight = 2.75f;
-  constexpr float kTop = 1.75f;
-  constexpr float kBottom = -1.75f;
-  {
-    // Render a background quad that starts at min depth at the top and increases to max depth along the bottom.
-    host_.Begin(TestHost::PRIMITIVE_QUADS);
-    host_.SetDiffuse(0xFFEE00EE);
-    host_.SetVertex(kLeft, kTop, min_val, 1.0f);
-    host_.SetVertex(kRight, kTop, min_val, 1.0f);
+  // Coordinates are unprojected from screen space to allow a sloped Z that still appears rectangular.
+  const float sLeft = host_.GetFramebufferWidthF() * 0.0125f;
+  const float sTop = host_.GetFramebufferHeightF() * 0.20f;
+  const float sRight = host_.GetFramebufferWidthF() - sLeft;
+  const float sBottom = host_.GetFramebufferHeightF() - sTop;
 
-    // TODO: Adjust right/left based on max val by unprojecting viewport coords.
-    host_.SetVertex(kRight * max_val * 0.1f, kBottom * max_val * 0.1f, max_val, 1.0f);
-    host_.SetVertex(kLeft * max_val * 0.1f, kBottom * max_val * 0.1f, max_val, 1.0f);
-    host_.End();
+  host_.Begin(TestHost::PRIMITIVE_QUADS);
+
+  {  // Render a background quad that starts at min depth at the top and increases to max depth along the bottom.
+    host_.SetDiffuse(0xFFEE00EE);
+
+    VECTOR ul;
+    VECTOR screen_point = {sLeft, sTop, 0.0f, 1.0f};
+    host_.UnprojectPoint(ul, screen_point, min_val);
+
+    VECTOR ur;
+    screen_point[_X] = sRight;
+    host_.UnprojectPoint(ur, screen_point, min_val);
+
+    VECTOR lr;
+    screen_point[_Y] = sBottom;
+    host_.UnprojectPoint(lr, screen_point, max_val);
+
+    VECTOR ll;
+    screen_point[_X] = sLeft;
+    host_.UnprojectPoint(ll, screen_point, max_val);
+
+    host_.SetVertex(ul[_X], ul[_Y], min_val, 1.0f);
+    host_.SetVertex(ur[_X], ur[_Y], min_val, 1.0f);
+    host_.SetVertex(lr[_X], lr[_Y], max_val, 1.0f);
+    host_.SetVertex(ll[_X], ll[_Y], max_val, 1.0f);
   }
 
-//  // Clear the visible part.
-//  host_.SetFillColorRegion(0xFE332211);
+  auto layout = GetExplicitBoxLayout(host_.GetFramebufferWidth(), host_.GetFramebufferHeight());
+
+  // Render quads at various depths along the center of the screen.
+  {
+    auto box = [this](float left, float top, float right, float bottom, float z) {
+      host_.SetDiffuse(0xFF661166);
+      VECTOR ul;
+      VECTOR screen_point = {left, top, 0.0f, 1.0f};
+      host_.UnprojectPoint(ul, screen_point, z);
+
+      VECTOR ur;
+      screen_point[_X] = right;
+      host_.UnprojectPoint(ur, screen_point, z);
+
+      VECTOR lr;
+      screen_point[_Y] = bottom;
+      host_.UnprojectPoint(lr, screen_point, z);
+
+      VECTOR ll;
+      screen_point[_X] = left;
+      host_.UnprojectPoint(ll, screen_point, z);
+
+      host_.SetVertex(ul[_X], ul[_Y], z, 1.0f);
+      host_.SetVertex(ur[_X], ur[_Y], z, 1.0f);
+      host_.SetVertex(lr[_X], lr[_Y], z, 1.0f);
+      host_.SetVertex(ll[_X], ll[_Y], z, 1.0f);
+    };
+    auto left = static_cast<float>(layout.first_box_left);
+    const auto top = static_cast<float>(layout.top);
+    const auto box_width = static_cast<float>(layout.box_width);
+    const auto box_height = static_cast<float>(layout.box_height);
+
+    static constexpr float kZValues[] = {
+        1.0f,
+        1.001f,
+        99.4999f,
+        99.5f,
+        99.5001f,
+        199.999f,
+        200.0f,
+    };
+    for (auto z : kZValues) {
+      box(left, top, left + box_width, top + box_height, z);
+      left += static_cast<float>(layout.spacing + layout.box_width);
+    }
+  }
+  host_.End();
+
+  // Clear the visible part.
+  host_.SetFillColorRegion(0xFE332211);
 
   // Restore the depth buffer.
   p = pb_begin();
@@ -403,81 +467,100 @@ void TextureShadowComparatorTests::TestPerspective(uint32_t depth_format, uint32
   pb_end(p);
 
   // Render a quad using the zeta buffer as a shadow map applied to the diffuse color.
+  // The texture map is used as a color source and will either be 0xFFFFFFFF or 0x00000000 for any given texel.
+  host_.SetFinalCombiner0Just(TestHost::SRC_TEX0);
+  host_.SetFinalCombiner1Just(TestHost::SRC_DIFFUSE, true);
 
-//
-//  // The texture map is used as a color source and will either be 0xFFFFFFFF or 0x00000000 for any given texel.
-//  host_.SetFinalCombiner0Just(TestHost::SRC_TEX0);
-//  host_.SetFinalCombiner1Just(TestHost::SRC_DIFFUSE, true);
-//
-//  auto &stage = host_.GetTextureStage(0);
-//  p = pb_begin();
-//  p = pb_push1(p, NV097_SET_SHADOW_COMPARE_FUNC, shadow_comp_function);
-//  pb_end(p);
-//
-//  stage.SetFormat(GetTextureFormatInfo(texture_format));
-//  host_.SetShaderStageProgram(TestHost::STAGE_3D_PROJECTIVE);
-//  stage.SetFormat(GetTextureFormatInfo(texture_format));
-//  stage.SetTextureDimensions(1, 1, 1);
-//  stage.SetImageDimensions(host_.GetFramebufferWidth(), host_.GetFramebufferHeight());
-//  host_.SetTextureStageEnabled(0, true);
-//  host_.SetupTextureStages();
-//
-//  {
-//    const auto tex_depth = static_cast<float>(ref);
-//    const float z = 1.5f;
-//    host_.Begin(TestHost::PRIMITIVE_QUADS);
-//    host_.SetDiffuse(0xFF2277FF);
-//    host_.SetTexCoord0(0.0f, 0.0f, tex_depth, 1.0f);
-//    host_.SetVertex(kLeft, kTop, z, 1.0f);
-//
-//    host_.SetTexCoord0(host_.GetFramebufferWidthF(), 0.0f, tex_depth, 1.0f);
-//    host_.SetVertex(kRight, kTop, z, 1.0f);
-//
-//    host_.SetTexCoord0(host_.GetFramebufferWidthF(), host_.GetFramebufferHeightF(), tex_depth, 1.0f);
-//    host_.SetVertex(kRight, kBottom, z, 1.0f);
-//
-//    host_.SetTexCoord0(0.0, host_.GetFramebufferHeightF(), tex_depth, 1.0f);
-//    host_.SetVertex(kLeft, kBottom, z, 1.0f);
-//    host_.End();
-//  }
-//
-//  // Render tiny triangles in the center of each explicit value box to make them visible regardless of the comparison.
-//  {
-//    host_.SetFinalCombiner0Just(TestHost::SRC_DIFFUSE);
-//    host_.SetShaderStageProgram(TestHost::STAGE_NONE);
-//    host_.SetTextureStageEnabled(0, false);
-//    host_.SetupTextureStages();
-//
-//    static constexpr uint32_t kMarkerColors[] = {
-//        0xFFFFAA00, 0xFFFF7700, 0xFFCC5500, 0xFF00FF00, 0xFF00AACC, 0xFF005577, 0xFF002266,
-//    };
-////    const float left_offset = static_cast<float>(layout.box_width) / 4.0f;
-////    const float mid_offset = left_offset * 2.0f;
-////    const float right_offset = mid_offset + left_offset;
-////    auto left = static_cast<float>(layout.first_box_left);
-////
-////    const float top_offset = static_cast<float>(layout.box_height) / 4.0f;
-////    const float bottom_offset = top_offset * 2.0f;
-////    const float top = static_cast<float>(layout.top) + top_offset;
-////    const float bottom = static_cast<float>(layout.top) + bottom_offset;
-//
-////    for (auto color : kMarkerColors) {
-////      host_.Begin(TestHost::PRIMITIVE_TRIANGLES);
-////      host_.SetDiffuse(color);
-////      host_.SetVertex(left + left_offset, bottom, 0.0f, 1.0f);
-////
-////      host_.SetVertex(left + mid_offset, top, 0.0f, 1.0f);
-////
-////      host_.SetVertex(left + right_offset, bottom, 0.0f, 1.0f);
-////
-////      left += static_cast<float>(layout.spacing + layout.box_width);
-////      host_.End();
-////    }
-//  }
+  auto &stage = host_.GetTextureStage(0);
+  p = pb_begin();
+  p = pb_push1(p, NV097_SET_SHADOW_COMPARE_FUNC, shadow_comp_function);
+  pb_end(p);
+
+  stage.SetFormat(GetTextureFormatInfo(texture_format));
+  host_.SetShaderStageProgram(TestHost::STAGE_3D_PROJECTIVE);
+  stage.SetFormat(GetTextureFormatInfo(texture_format));
+  stage.SetTextureDimensions(1, 1, 1);
+  stage.SetImageDimensions(host_.GetFramebufferWidth(), host_.GetFramebufferHeight());
+  host_.SetTextureStageEnabled(0, true);
+  host_.SetupTextureStages();
+
+  {
+    const float z = 1.5f;
+    VECTOR ul;
+    VECTOR screen_point = {sLeft, sTop, 0.0f, 1.0f};
+    host_.UnprojectPoint(ul, screen_point, z);
+
+    VECTOR lr;
+    screen_point[_X] = sRight;
+    screen_point[_Y] = sBottom;
+    host_.UnprojectPoint(lr, screen_point, z);
+
+    const auto tex_depth = static_cast<float>(ref);
+    host_.Begin(TestHost::PRIMITIVE_QUADS);
+    host_.SetDiffuse(0xFF2277FF);
+    host_.SetTexCoord0(0.0f, 0.0f, tex_depth, 1.0f);
+    host_.SetVertex(ul[_X], ul[_Y], z, 1.0f);
+
+    host_.SetTexCoord0(host_.GetFramebufferWidthF(), 0.0f, tex_depth, 1.0f);
+    host_.SetVertex(lr[_X], ul[_Y], z, 1.0f);
+
+    host_.SetTexCoord0(host_.GetFramebufferWidthF(), host_.GetFramebufferHeightF(), tex_depth, 1.0f);
+    host_.SetVertex(lr[_X], lr[_Y], z, 1.0f);
+
+    host_.SetTexCoord0(0.0, host_.GetFramebufferHeightF(), tex_depth, 1.0f);
+    host_.SetVertex(ul[_X], lr[_Y], z, 1.0f);
+    host_.End();
+  }
+
+  // Render tiny triangles in the center of each explicit value box to make them visible regardless of the comparison.
+  {
+    host_.SetFinalCombiner0Just(TestHost::SRC_DIFFUSE);
+    host_.SetShaderStageProgram(TestHost::STAGE_NONE);
+    host_.SetTextureStageEnabled(0, false);
+    host_.SetupTextureStages();
+
+    static constexpr uint32_t kMarkerColors[] = {
+        0xFFFFAA00, 0xFFFF7700, 0xFFCC5500, 0xFF00FF00, 0xFF00AACC, 0xFF005577, 0xFF002266,
+    };
+
+    const float left_offset = static_cast<float>(layout.box_width) / 4.0f;
+    const float mid_offset = left_offset * 2.0f;
+    const float right_offset = mid_offset + left_offset;
+    auto left = static_cast<float>(layout.first_box_left);
+
+    const float top_offset = static_cast<float>(layout.box_height) / 4.0f;
+    const float bottom_offset = top_offset * 2.0f;
+    const float top = static_cast<float>(layout.top) + top_offset;
+    const float bottom = static_cast<float>(layout.top) + bottom_offset;
+
+    for (auto color : kMarkerColors) {
+      host_.Begin(TestHost::PRIMITIVE_TRIANGLES);
+      host_.SetDiffuse(color);
+
+      VECTOR pt;
+
+      VECTOR screen_point = {left + left_offset, bottom, 0.0f, 1.0f};
+      host_.UnprojectPoint(pt, screen_point, 0.0f);
+      host_.SetVertex(pt);
+
+      screen_point[_X] = left + mid_offset;
+      screen_point[_Y] = top;
+      host_.UnprojectPoint(pt, screen_point, 0.0f);
+      host_.SetVertex(pt);
+
+      screen_point[_X] = left + right_offset;
+      screen_point[_Y] = bottom;
+      host_.UnprojectPoint(pt, screen_point, 0.0f);
+      host_.SetVertex(pt);
+
+      left += static_cast<float>(layout.spacing + layout.box_width);
+      host_.End();
+    }
+  }
 
   pb_print("%s\n", name.c_str());
   pb_print("Rng 0x%X-0x%x\n", min_val, max_val);
-  pb_print("Ref, edges, center: 0x%X\n", ref);
+  pb_print("Ref, center: 0x%X\n", ref);
   pb_draw_text_screen();
 
   host_.FinishDraw(allow_saving_, output_dir_, name);

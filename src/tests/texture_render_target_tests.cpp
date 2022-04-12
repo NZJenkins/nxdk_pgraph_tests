@@ -56,8 +56,7 @@ void TextureRenderTargetTests::Initialize() {
   CreateGeometry();
 
   auto channel = kNextContextChannel;
-  const uint32_t texture_target_dma_channel = channel++;
-  pb_create_dma_ctx(texture_target_dma_channel, DMA_CLASS_3D, 0, MAXRAM, &texture_target_ctx_);
+  pb_create_dma_ctx(channel++, DMA_CLASS_3D, 0, MAXRAM, &texture_target_ctx_);
   pb_bind_channel(&texture_target_ctx_);
 
   const uint32_t texture_size = kTexturePitch * kTextureHeight;

@@ -27,6 +27,7 @@
 #define MAX_FILE_PATH_SIZE 248
 static void SetVertexAttribute(uint32_t index, uint32_t format, uint32_t size, uint32_t stride, const void *data);
 static void ClearVertexAttribute(uint32_t index);
+static void GetCompositeMatrix(MATRIX result, const MATRIX model_view, const MATRIX projection);
 
 TestHost::TestHost(uint32_t framebuffer_width, uint32_t framebuffer_height, uint32_t max_texture_width,
                    uint32_t max_texture_height, uint32_t max_texture_depth)
@@ -53,6 +54,8 @@ TestHost::TestHost(uint32_t framebuffer_width, uint32_t framebuffer_height, uint
 
   matrix_unit(fixed_function_model_view_matrix_);
   matrix_unit(fixed_function_projection_matrix_);
+  matrix_unit(fixed_function_composite_matrix_);
+  matrix_unit(fixed_function_inverse_composite_matrix_);
 
   uint32_t texture_offset = 0;
   uint32_t palette_offset = 0;
@@ -939,7 +942,7 @@ void TestHost::SetXDKDefaultViewportAndFixedFunctionMatrices() {
   GetDefaultXDKModelViewMatrix(matrix);
   SetFixedFunctionModelViewMatrix(matrix);
 
-  GetDefaultXDKCompositeMatrix(matrix);
+  GetDefaultXDKProjectionMatrix(matrix);
   SetFixedFunctionProjectionMatrix(matrix);
 
   fixed_function_matrix_mode_ = MATRIX_MODE_DEFAULT_XDK;
@@ -986,15 +989,14 @@ void TestHost::SetDefaultViewportAndFixedFunctionMatrices() {
   fixed_function_matrix_mode_ = MATRIX_MODE_DEFAULT_NXDK;
 }
 
-void TestHost::GetDefaultXDKModelViewMatrix(MATRIX matrix) const {
-
+void TestHost::GetDefaultXDKModelViewMatrix(MATRIX matrix) {
   VECTOR eye{0.0f, 0.0f, -7.0f, 1.0f};
   VECTOR at{0.0f, 0.0f, 0.0f, 1.0f};
   VECTOR up{0.0f, 1.0f, 0.0f, 1.0f};
-  create_d3d_look_at_lh(matrix, eye, at, up);
+  GetD3DModelViewMatrix(matrix, eye, at, up);
 }
 
-void TestHost::GetD3DModelViewMatrix(MATRIX matrix, VECTOR eye, VECTOR at, VECTOR up) const {
+void TestHost::GetD3DModelViewMatrix(MATRIX matrix, const VECTOR eye, const VECTOR at, const VECTOR up) {
   create_d3d_look_at_lh(matrix, eye, at, up);
 }
 
@@ -1012,15 +1014,44 @@ void TestHost::GetD3DProjectionViewportMatrix(MATRIX result, float fov, float z_
   matrix_multiply(result, projection, viewport);
 }
 
-void TestHost::GetD3DCompositeMatrix(MATRIX result, float fov, float z_near, float z_far) const {
-  MATRIX temp;
-  GetD3DProjectionViewportMatrix(temp, fov, z_near, z_far);
-
-  matrix_multiply(result, fixed_function_model_view_matrix_, temp);
+void TestHost::GetDefaultXDKProjectionMatrix(MATRIX matrix) const {
+  GetD3DProjectionViewportMatrix(matrix, M_PI * 0.25f, 1.0f, 200.0f);
 }
 
-void TestHost::GetDefaultXDKCompositeMatrix(MATRIX matrix) const {
-  GetD3DCompositeMatrix(matrix, M_PI * 0.25f, 1.0f, 200.0f);
+void TestHost::ProjectPoint(VECTOR result, const VECTOR world_point) const {
+  VECTOR screen_point;
+  vector_apply(screen_point, world_point, fixed_function_composite_matrix_);
+
+  screen_point[_X] /= screen_point[_W];
+  screen_point[_Y] /= screen_point[_W];
+  screen_point[_Z] /= screen_point[_W];
+  screen_point[_W] = 1.0f;
+}
+
+void TestHost::UnprojectPoint(VECTOR result, const VECTOR screen_point) const {
+  vector_apply(result, screen_point, fixed_function_inverse_composite_matrix_);
+}
+
+void TestHost::UnprojectPoint(VECTOR result, const VECTOR screen_point, float world_z) const {
+  VECTOR work;
+  vector_copy(work, screen_point);
+
+  // TODO: Get the near and far plane mappings from the viewport matrix.
+  work[_Z] = 0.0f;
+  VECTOR near_plane;
+  vector_apply(near_plane, work, fixed_function_inverse_composite_matrix_);
+  vector_euclidean(near_plane, near_plane);
+
+  work[_Z] = 1.0f;
+  VECTOR far_plane;
+  vector_apply(far_plane, work, fixed_function_inverse_composite_matrix_);
+  vector_euclidean(far_plane, far_plane);
+
+  float t = (world_z - near_plane[_Z]) / (far_plane[_Z] - near_plane[_Z]);
+  result[_X] = near_plane[_X] + (far_plane[_X] - near_plane[_X]) * t;
+  result[_Y] = near_plane[_Y] + (far_plane[_Y] - near_plane[_Y]) * t;
+  result[_Z] = world_z;
+  result[_W] = 1.0f;
 }
 
 void TestHost::SetWindowClip(uint32_t width, uint32_t height, uint32_t x, uint32_t y) {
@@ -1030,13 +1061,13 @@ void TestHost::SetWindowClip(uint32_t width, uint32_t height, uint32_t x, uint32
   pb_end(p);
 }
 
-void TestHost::SetViewportOffset(float x, float y, float z, float w) const {
+void TestHost::SetViewportOffset(float x, float y, float z, float w) {
   auto p = pb_begin();
   p = pb_push4f(p, NV097_SET_VIEWPORT_OFFSET, x, y, z, w);
   pb_end(p);
 }
 
-void TestHost::SetViewportScale(float x, float y, float z, float w) const {
+void TestHost::SetViewportScale(float x, float y, float z, float w) {
   auto p = pb_begin();
   p = pb_push4f(p, NV097_SET_VIEWPORT_SCALE, x, y, z, w);
   pb_end(p);
@@ -1053,13 +1084,20 @@ void TestHost::SetFixedFunctionModelViewMatrix(const MATRIX model_matrix) {
   pb_end(p);
 
   fixed_function_matrix_mode_ = MATRIX_MODE_USER;
+
+  SetFixedFunctionProjectionMatrix(fixed_function_projection_matrix_);
 }
 
 void TestHost::SetFixedFunctionProjectionMatrix(const MATRIX projection_matrix) {
   memcpy(fixed_function_projection_matrix_, projection_matrix, sizeof(fixed_function_projection_matrix_));
+
+  GetCompositeMatrix(fixed_function_composite_matrix_, fixed_function_model_view_matrix_, fixed_function_projection_matrix_);
   auto p = pb_begin();
-  p = pb_push_transposed_matrix(p, NV097_SET_COMPOSITE_MATRIX, fixed_function_projection_matrix_);
+  p = pb_push_transposed_matrix(p, NV097_SET_COMPOSITE_MATRIX, fixed_function_composite_matrix_);
   pb_end(p);
+
+  matrix_transpose(fixed_function_composite_matrix_, fixed_function_composite_matrix_);
+  matrix_general_inverse(fixed_function_inverse_composite_matrix_, fixed_function_composite_matrix_);
 
   fixed_function_matrix_mode_ = MATRIX_MODE_USER;
 }
@@ -1425,4 +1463,8 @@ static void SetVertexAttribute(uint32_t index, uint32_t format, uint32_t size, u
 static void ClearVertexAttribute(uint32_t index) {
   // Note: xemu has asserts on the count for several formats, so any format without that ASSERT must be used.
   SetVertexAttribute(index, NV097_SET_VERTEX_DATA_ARRAY_FORMAT_TYPE_F, 0, 0, nullptr);
+}
+
+static void GetCompositeMatrix(MATRIX result, const MATRIX model_view, const MATRIX projection) {
+  matrix_multiply(result, model_view, projection);
 }

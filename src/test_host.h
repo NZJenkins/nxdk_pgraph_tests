@@ -310,19 +310,15 @@ class TestHost {
   std::shared_ptr<VertexShaderProgram> GetShaderProgram() const { return vertex_shader_program_; }
 
   // Generates a D3D-style model view matrix.
-  void GetD3DModelViewMatrix(MATRIX matrix, VECTOR eye, VECTOR at, VECTOR up) const;
+  static void GetD3DModelViewMatrix(MATRIX matrix, const VECTOR eye, const VECTOR at, const VECTOR up);
 
   // Gets a D3D-style matrix suitable for a projection + viewport transform.
   void GetD3DProjectionViewportMatrix(MATRIX result, float fov, float z_near, float z_far) const;
 
-  // Generates a D3D-style composite matrix. This is a combination of the current modelview matrix with an appropriate
-  // projection and viewport transformation.
-  void GetD3DCompositeMatrix(MATRIX result, float fov, float z_near, float z_far) const;
-
   // Gets a reasonable default model view matrix (camera at z=-7.0f looking at the origin)
-  void GetDefaultXDKModelViewMatrix(MATRIX matrix) const;
-  // Gets a reasonable default composite matrix (fov = PI/4, near = 1, far = 200)
-  void GetDefaultXDKCompositeMatrix(MATRIX matrix) const;
+  static void GetDefaultXDKModelViewMatrix(MATRIX matrix) ;
+  // Gets a reasonable default projection matrix (fov = PI/4, near = 1, far = 200)
+  void GetDefaultXDKProjectionMatrix(MATRIX matrix) const;
 
   // Set up the viewport and fixed function pipeline matrices to match a default XDK project.
   void SetXDKDefaultViewportAndFixedFunctionMatrices();
@@ -330,9 +326,15 @@ class TestHost {
   // Set up the viewport and fixed function pipeline matrices to match the nxdk settings.
   void SetDefaultViewportAndFixedFunctionMatrices();
 
-  void SetWindowClip(uint32_t width, uint32_t height, uint32_t x = 0, uint32_t y = 0);
-  void SetViewportOffset(float x, float y, float z, float w) const;
-  void SetViewportScale(float x, float y, float z, float w) const;
+  // Projects the given point (on the CPU), placing the resulting screen coordinates into `result`.
+  void ProjectPoint(VECTOR result, const VECTOR world_point) const;
+
+  void UnprojectPoint(VECTOR result, const VECTOR screen_point) const;
+  void UnprojectPoint(VECTOR result, const VECTOR screen_point, float world_z) const;
+
+  static void SetWindowClip(uint32_t width, uint32_t height, uint32_t x = 0, uint32_t y = 0);
+  static void SetViewportOffset(float x, float y, float z, float w) ;
+  static void SetViewportScale(float x, float y, float z, float w) ;
 
   void SetFixedFunctionModelViewMatrix(const MATRIX model_matrix);
   void SetFixedFunctionProjectionMatrix(const MATRIX projection_matrix);
@@ -348,6 +350,10 @@ class TestHost {
   void SetVertex(float x, float y, float z) const;
   // Trigger creation of a vertex, applying the last set attributes.
   void SetVertex(float x, float y, float z, float w) const;
+  // Trigger creation of a vertex, applying the last set attributes.
+  inline void SetVertex(const VECTOR pt) const {
+    SetVertex(pt[_X], pt[_Y], pt[_Z], pt[_W]);
+  }
 
   void SetWeight(float w) const;
   void SetWeight(float w1, float w2, float w3, float w4) const;
@@ -531,6 +537,8 @@ class TestHost {
   FixedFunctionMatrixSetting fixed_function_matrix_mode_{MATRIX_MODE_DEFAULT_NXDK};
   MATRIX fixed_function_model_view_matrix_{};
   MATRIX fixed_function_projection_matrix_{};
+  MATRIX fixed_function_composite_matrix_{};
+  MATRIX fixed_function_inverse_composite_matrix_{};
 
   bool save_results_{true};
 
